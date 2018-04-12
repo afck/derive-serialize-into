@@ -3,20 +3,23 @@
 
 # Derive `Serialize`, `Deserialize` for wrapper types
 
-This crate provides several custom derives that make it more convenient to create implementations of
-[serde](https://serde.rs/)'s `Serialize` and `Deserialize` traits for types `T` that can be
-converted to or from another type `S` which already does implement those traits.
+This crate provides several custom derives that provide implementations of
+[serde](https://serde.rs/)'s `Serialize` and `Deserialize` traits for wrapper types, as well as
+`Deserialize` implementations that perform some validation.
 
-One use case is if you have a single-field type like
+Sometimes you have a single-field type
 
 ```rust
-#[derive(SerializeInto, DeserializeFrom)]
+#[derive(DeserializeFrom, FromInner, IntoInner, SerializeInto)]
 struct Contact {
     email: String,
 }
 ```
 
-which you want to serialize and deserialize as a string instead of a struct.
+which you want to serialize and deserialize as a string instead of a struct, e.g. you want its JSON
+representation to just be "`"user@domain.com"`" instead of "`{ "email": "user@domain.com" }`". The
+above derive attribute creates `Serialize` and `Deserialize` implementations for that purpose, as
+well as `Into` and `From` implementations to convert between `String` and `Contact`.
 
 Another example is a _validated_ wrapper type like
 

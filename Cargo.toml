@@ -1,6 +1,6 @@
 [package]
 name = "derive-serialize-into"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Andreas Fackler <Andreas.Fackler@49nord.de>"]
 description = "Derive Serialize and Deserialize for wrapper types"
 repository = "https://github.com/afck/derive-serialize-into"

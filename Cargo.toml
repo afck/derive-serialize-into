@@ -1,0 +1,21 @@
+[package]
+name = "derive-serialize-into"
+version = "0.1.0"
+authors = ["Andreas Fackler <Andreas.Fackler@49nord.de>"]
+description = "Derive Serialize and Deserialize for wrapper types"
+repository = "https://github.com/afck/derive-serialize-into"
+license = "MIT"
+readme = "README.md"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "0.13.1"
+quote = "0.5.1"
+
+[dev-dependencies]
+serde = "1.0.37"
+serde_json = "1.0.13"
+try_from = "0.2.2"
+validator = "0.6.3"

@@ -185,36 +185,17 @@ use proc_macro::TokenStream;
 #[proc_macro_derive(DeserializeTryFrom, attributes(deserialize_from))]
 pub fn derive_deserialize_try_from(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
-    deserialize_try_from_impl(ast).into()
-}
-
-fn deserialize_try_from_impl(ast: syn::DeriveInput) -> quote::Tokens {
-    let name = ast.ident;
-    let base = get_attr_type(&ast, "deserialize_from").unwrap_or_else(|| get_field(&ast).1);
-    let (_, ty_generics, where_clause) = ast.generics.split_for_impl();
-    let lifetime = syn::parse(quote! { 'de_derive_serialize_into }.into()).unwrap();
-    let generics = with_lifetime(&ast.generics, &lifetime);
-    let (impl_generics, _, _) = generics.split_for_impl();
-
-    quote! {
-        impl#impl_generics ::serde::Deserialize<#lifetime> for #name#ty_generics #where_clause {
-            fn deserialize<D: ::serde::Deserializer<#lifetime>>(deserializer: D)
-                -> Result<Self, D::Error> {
-                let s = <#base as ::serde::Deserialize>::deserialize(deserializer)?;
-                ::try_from::TryInto::try_into(s).map_err(<D::Error as serde::de::Error>::custom)
-            }
-        }
-    }
+    deserialize_from_impl(ast, true).into()
 }
 
 #[doc(hidden)]
 #[proc_macro_derive(DeserializeFrom, attributes(deserialize_from))]
 pub fn derive_deserialize_from(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
-    deserialize_from_impl(ast).into()
+    deserialize_from_impl(ast, false).into()
 }
 
-fn deserialize_from_impl(ast: syn::DeriveInput) -> quote::Tokens {
+fn deserialize_from_impl(ast: syn::DeriveInput, try: bool) -> quote::Tokens {
     let name = ast.ident;
     let base = get_attr_type(&ast, "deserialize_from").unwrap_or_else(|| get_field(&ast).1);
     let (_, ty_generics, where_clause) = ast.generics.split_for_impl();
@@ -222,12 +203,20 @@ fn deserialize_from_impl(ast: syn::DeriveInput) -> quote::Tokens {
     let generics = with_lifetime(&ast.generics, &lifetime);
     let (impl_generics, _, _) = generics.split_for_impl();
 
+    let body = if try {
+        quote! {
+            ::try_from::TryInto::try_into(s).map_err(<D::Error as serde::de::Error>::custom)
+        }
+    } else {
+        quote! { Ok(s.into()) }
+    };
+
     quote! {
         impl#impl_generics ::serde::Deserialize<#lifetime> for #name#ty_generics #where_clause {
             fn deserialize<D: ::serde::Deserializer<#lifetime>>(deserializer: D)
                 -> Result<Self, D::Error> {
                 let s = <#base as ::serde::Deserialize>::deserialize(deserializer)?;
-                Ok(s.into())
+                #body
             }
         }
     }
@@ -242,7 +231,7 @@ pub fn derive_serialize_into(input: TokenStream) -> TokenStream {
 
 fn serialize_into_impl(ast: syn::DeriveInput) -> quote::Tokens {
     let name = ast.ident;
-    let base: syn::Type = get_attr_type(&ast, "deserialize_from").unwrap_or_else(|| {
+    let base: syn::Type = get_attr_type(&ast, "serialize_into").unwrap_or_else(|| {
         let raw_base = get_field(&ast).1;
         parse_quote! { &#raw_base }
     });
@@ -273,7 +262,7 @@ fn into_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
     let generics = with_lifetime(&ast.generics, &lifetime);
     let (impl_generics, _, _) = generics.split_for_impl();
 
-    let construct = match field {
+    let body = match field {
         None => quote! { &outer.0 },
         Some(ident) => quote! { &outer.#ident },
     };
@@ -281,7 +270,7 @@ fn into_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
     quote! {
         impl#impl_generics From<&#lifetime #name#ty_generics> for &#lifetime #base #where_clause {
             fn from(outer: &#name#ty_generics) -> &#base {
-                #construct
+                #body
             }
         }
     }
@@ -299,7 +288,7 @@ fn from_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
     let (field, base) = get_field(&ast);
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
-    let construct = match field {
+    let body = match field {
         None => quote! { #name(inner) },
         Some(ident) => quote! { #name { #ident: inner } },
     };
@@ -307,7 +296,7 @@ fn from_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
     quote! {
         impl#impl_generics From<#base> for #name#ty_generics #where_clause {
             fn from(inner: #base) -> #name#ty_generics {
-                #construct
+                #body
             }
         }
     }

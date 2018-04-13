@@ -191,12 +191,13 @@ pub fn derive_deserialize_try_from(input: TokenStream) -> TokenStream {
 fn deserialize_try_from_impl(ast: syn::DeriveInput) -> quote::Tokens {
     let name = ast.ident;
     let base = get_attr_type(&ast, "deserialize_from").unwrap_or_else(|| get_field(&ast).1);
-    let generics = ast.generics;
-    let lifetime = syn::parse(quote! { 'de }.into()).unwrap();
-    let impl_generics = with_lifetime(&generics, &lifetime);
+    let (_, ty_generics, where_clause) = ast.generics.split_for_impl();
+    let lifetime = syn::parse(quote! { 'de_derive_serialize_into }.into()).unwrap();
+    let generics = with_lifetime(&ast.generics, &lifetime);
+    let (impl_generics, _, _) = generics.split_for_impl();
 
     quote! {
-        impl#impl_generics ::serde::Deserialize<#lifetime> for #name#generics {
+        impl#impl_generics ::serde::Deserialize<#lifetime> for #name#ty_generics #where_clause {
             fn deserialize<D: ::serde::Deserializer<#lifetime>>(deserializer: D)
                 -> Result<Self, D::Error> {
                 let s = <#base as ::serde::Deserialize>::deserialize(deserializer)?;
@@ -216,12 +217,13 @@ pub fn derive_deserialize_from(input: TokenStream) -> TokenStream {
 fn deserialize_from_impl(ast: syn::DeriveInput) -> quote::Tokens {
     let name = ast.ident;
     let base = get_attr_type(&ast, "deserialize_from").unwrap_or_else(|| get_field(&ast).1);
-    let generics = ast.generics;
-    let lifetime = syn::parse(quote! { 'de }.into()).unwrap();
-    let impl_generics = with_lifetime(&generics, &lifetime);
+    let (_, ty_generics, where_clause) = ast.generics.split_for_impl();
+    let lifetime = syn::parse(quote! { 'de_derive_serialize_into }.into()).unwrap();
+    let generics = with_lifetime(&ast.generics, &lifetime);
+    let (impl_generics, _, _) = generics.split_for_impl();
 
     quote! {
-        impl#impl_generics ::serde::Deserialize<#lifetime> for #name#generics {
+        impl#impl_generics ::serde::Deserialize<#lifetime> for #name#ty_generics #where_clause {
             fn deserialize<D: ::serde::Deserializer<#lifetime>>(deserializer: D)
                 -> Result<Self, D::Error> {
                 let s = <#base as ::serde::Deserialize>::deserialize(deserializer)?;
@@ -244,10 +246,10 @@ fn serialize_into_impl(ast: syn::DeriveInput) -> quote::Tokens {
         let raw_base = get_field(&ast).1;
         parse_quote! { &#raw_base }
     });
-    let generics = ast.generics;
+    let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
     quote! {
-        impl#generics ::serde::Serialize for #name#generics {
+        impl#impl_generics ::serde::Serialize for #name#ty_generics #where_clause {
             fn serialize<S: ::serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
                 let b: #base = self.into();
                 ::serde::Serialize::serialize(&b, serializer)
@@ -266,9 +268,10 @@ pub fn derive_into_inner(input: TokenStream) -> TokenStream {
 fn into_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
     let name = ast.ident;
     let (field, base) = get_field(&ast);
-    let generics = ast.generics;
-    let lifetime = syn::parse(quote! { 'a }.into()).unwrap();
-    let impl_generics = with_lifetime(&generics, &lifetime);
+    let (_, ty_generics, where_clause) = ast.generics.split_for_impl();
+    let lifetime = syn::parse(quote! { 'a_derive_serialize_into }.into()).unwrap();
+    let generics = with_lifetime(&ast.generics, &lifetime);
+    let (impl_generics, _, _) = generics.split_for_impl();
 
     let construct = match field {
         None => quote! { &outer.0 },
@@ -276,8 +279,8 @@ fn into_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
     };
 
     quote! {
-        impl#impl_generics From<&#lifetime #name#generics> for &#lifetime #base {
-            fn from(outer: &#name#generics) -> &#base {
+        impl#impl_generics From<&#lifetime #name#ty_generics> for &#lifetime #base #where_clause {
+            fn from(outer: &#name#ty_generics) -> &#base {
                 #construct
             }
         }
@@ -294,7 +297,7 @@ pub fn derive_from_inner(input: TokenStream) -> TokenStream {
 fn from_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
     let name = ast.ident;
     let (field, base) = get_field(&ast);
-    let generics = ast.generics;
+    let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
     let construct = match field {
         None => quote! { #name(inner) },
@@ -302,8 +305,8 @@ fn from_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
     };
 
     quote! {
-        impl#generics From<#base> for #name#generics {
-            fn from(inner: #base) -> #name#generics {
+        impl#impl_generics From<#base> for #name#ty_generics #where_clause {
+            fn from(inner: #base) -> #name#ty_generics {
                 #construct
             }
         }
@@ -355,7 +358,6 @@ fn get_attr_type(ast: &syn::DeriveInput, name: &str) -> Option<syn::Type> {
 
 /// Returns the name and type of the field, if there is a unique one.
 fn get_field(ast: &syn::DeriveInput) -> (Option<syn::Ident>, syn::Type) {
-    // TODO: Make sure this works well with generics.
     match ast.data {
         syn::Data::Struct(ref data_struct) => {
             let mut fields = data_struct.fields.iter();

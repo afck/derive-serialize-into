@@ -1,4 +1,4 @@
-//! # Derive `Serialize` and `Deserialize` for wrapper types
+//! # Derive `Serialize` and `Deserialize` for validating wrapper types
 //!
 //! This crate provides several custom derives that provide implementations of
 //! [serde](https://serde.rs/)'s `Serialize` and `Deserialize` traits for wrapper types, as well as

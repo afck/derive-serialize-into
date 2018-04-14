@@ -1,11 +1,13 @@
 [package]
 name = "derive-serialize-into"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Andreas Fackler <Andreas.Fackler@49nord.de>"]
-description = "Derive Serialize and Deserialize for wrapper types"
+description = "Derive Serialize and Deserialize for validating wrapper types"
 repository = "https://github.com/afck/derive-serialize-into"
 license = "MIT"
 readme = "README.md"
+keywords = ["serde", "serialization", "validation", "wrapper"]
+categories = ["encoding"]
 
 [lib]
 proc-macro = true

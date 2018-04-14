@@ -29,8 +29,44 @@
 //! [try_from](https://crates.io/crates/try_from) crate, such that conversion fails for invalid
 //! addresses, the derived `Deserialize` will also fail if the string is in the wrong format.
 //!
+//! Custom derives for `From` and `TryFrom` are also provided for some common use cases.
+//!
 //!
 //! ## Supported derive attributes
+//!
+//! ### `#[derive(SerializeInto)]`
+//!
+//! On structures `T`, given an `impl Into<S> for &T`, this creates an `impl Serialize for T` which
+//! first converts to `S` and then serializes it.
+//!
+//! You can optionally specify `S` with `#[serialize_into(S)]`. If you don't, `T` must be a
+//! structure with a single field, and a reference to that field's type will be used as `S`.
+//! Together with `#[derive(IntoInner)]`, this makes it easy to serialize structs like
+//! `struct Foo(S)` or `struct Foo { bar: S }` as if they were type `S`.
+//!
+//! ### `#[derive(DeserializeFrom)]`
+//!
+//! On structures `T`, given an `impl Into<T> for S`, this creates an
+//! `impl<'de> Deserialize<'de> for T` which first deserializes to `S` and then converts to `T`.
+//!
+//! You can optionally specify `S` with `#[deserialize_from(S)]`. If you don't, `T` must be a
+//! structure with a single field, and that field's type will be used as `S`.
+//! Together with `#[derive(FromInner)]`, this makes it easy to deserialize structs like
+//! `struct Foo(S)` or `struct Foo { bar: S }` as if they were just `S`.
+//!
+//! ### `#[derive(DeserializeTryFrom)]`
+//!
+//! On structures `T`, given an `impl TryInto<T> for S`, this creates an
+//! `impl<'de> Deserialize<'de> for T` which first deserializes to `S` and then tries to convert to
+//! `T`. A failure to convert will cause deserialization to fail. The `TryInto` implementation's
+//! error type must implement `Display` and will be converted to a custom deserialization error.
+//!
+//! You can optionally specify `S` with `#[deserialize_from(S)]`. If you don't, `T` must be a
+//! structure with a single field, and that field's type will be used as `S`.
+//! Together with `#[derive(TryFromInner)]`, this allows deserializing structs like
+//! `struct Foo(S)` or `struct Foo { bar: S }` as if they were just `S`, but with additional
+//! validation. For deserialized values of `S` that don't validate, deserialization into `T` will
+//! fail.
 //!
 //! ### `#[derive(IntoInner)]`
 //!
@@ -41,25 +77,19 @@
 //!
 //! On structures `T` with a single field of type `S`, this creates an `impl From<S> for T`.
 //!
-//! ### `#[derive(SerializeInto)]`
+//! ### `#[derive(TryFromInner)]`
 //!
-//! On structures `T`, given an `impl Into<S> for &T`, this creates an `impl Serialize for T` which
-//! first converts to `S` and then serializes it. If `#[serialize_into(S)]` is not specified and
-//! `T` is a structure with a single field, it uses a reference to that field's type as `S`.
+//! On structures `T` with a single field of type `S`, this creates an `impl TryFrom<S> for T` that
+//! applies some validation to `S`. The error type will be `&'static str`.
 //!
-//! ### `#[derive(DeserializeFrom)]`
+//! You can specify the validation criterion as a function `fn check(&S) -> bool` with
+//! `#[try_from_inner = "check"]` to make `try_from` fail if `check` returns `false`.
 //!
-//! On structures `T`, given an `impl Into<T> for S`, this creates an `impl Deserialize for T`
-//! which first deserializes to `S` and then converts to `T`. If `#[deserialize_from(S)]` is not
-//! specified and `T` is a structure with a single field, it uses that field's type as `S`.
-//!
-//! ### `#[derive(DeserializeTryFrom)]`
-//!
-//! On structures `T`, given an `impl TryInto<T> for S`, this creates an `impl Deserialize for T`
-//! which first deserializes to `S` and then converts to `T`. If `#[deserialize_from(S)]` is not
-//! specified and `T` is a structure with a single field, it uses that field's type as `S`.
-//! Deserialization fails if conversion from `S` to `T` fails. The `TryInto` implementation's error
-//! type must implement `Display` and will be converted to a custom deserialization error.
+//! Or, if `S` is `String`, add an attribute `#[try_from_inner_regex = "..."]` to allow
+//! only values that contain a match for the given regular expression `"..."`. You need to use the
+//! crates [lazy_static](https://crates.io/crates/lazy_static) and
+//! [regex](https://crates.io/crates/regex) for this to work. To enforce that the regex matches
+//! the _whole_ string, remember to start it with `^` and end it with `$`!
 //!
 //!
 //! ## Example: simple wrapper types
@@ -99,20 +129,9 @@
 //! extern crate try_from;
 //! extern crate validator;
 //!
-//! #[derive(DeserializeTryFrom, IntoInner, SerializeInto, Debug, Eq, PartialEq)]
+//! #[derive(DeserializeTryFrom, IntoInner, SerializeInto, TryFromInner, Debug, Eq, PartialEq)]
+//! #[try_from_inner = "validator::validate_email"]
 //! struct Email(String);
-//!
-//! impl try_from::TryFrom<String> for Email {
-//!     type Err = &'static str;
-//!
-//!     fn try_from(raw: String) -> Result<Email, &'static str> {
-//!         if validator::validate_email(&raw) {
-//!             Ok(Email(raw))
-//!         } else {
-//!             Err("invalid email address")
-//!         }
-//!     }
-//! }
 //!
 //! fn main() {
 //!     let email_json = r#""user@domain.com""#;
@@ -120,6 +139,30 @@
 //!     assert_eq!(email, serde_json::from_str(email_json).unwrap());
 //!     assert_eq!(email_json, &serde_json::to_string(&email).unwrap());
 //!     assert!(serde_json::from_str::<Email>(r#""missing_at_sign""#).is_err());
+//! }
+//! ```
+//!
+//!
+//! ## Example: validated phone numbers
+//!
+//! ```rust
+//! #[macro_use]
+//! extern crate derive_serialize_into;
+//! #[macro_use]
+//! extern crate lazy_static;
+//! extern crate regex;
+//! extern crate try_from;
+//!
+//! use try_from::TryFrom;
+//!
+//! #[derive(TryFromInner)]
+//! #[try_from_inner_regex = "^\\+?[[:digit:]]+$"]
+//! struct Phone(String);
+//!
+//! fn main() {
+//!     assert!(Phone::try_from("+12345".to_string()).is_ok());
+//!     assert!(Phone::try_from("12345".to_string()).is_ok());
+//!     assert!(Phone::try_from("12345XY".to_string()).is_err());
 //! }
 //! ```
 //!
@@ -302,6 +345,55 @@ fn from_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
     }
 }
 
+#[doc(hidden)]
+#[proc_macro_derive(TryFromInner, attributes(try_from_inner, try_from_inner_regex))]
+pub fn derive_try_from_inner(input: TokenStream) -> TokenStream {
+    let ast = syn::parse(input).unwrap();
+    try_from_inner_impl(ast).into()
+}
+
+fn try_from_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
+    let name = ast.ident;
+    let check = get_attr_try_from_inner(&ast);
+    let (field, base) = get_field(&ast);
+    let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
+
+    let construct = match field {
+        None => quote! { #name(inner) },
+        Some(ident) => quote! { #name { #ident: inner } },
+    };
+
+    let fn_body = match check {
+        TryFromInnerCheck::BoolFn(path) => quote! {
+            if #path(&inner) {
+                Ok(#construct)
+            } else {
+                Err("validation function returned false")
+            }
+        },
+        TryFromInnerCheck::Regex(regex) => quote! {
+            lazy_static! {
+                static ref RE: ::regex::Regex = ::regex::Regex::new(#regex).expect("invalid regex");
+            }
+            if RE.is_match(&inner) {
+                Ok(#construct)
+            } else {
+                Err("value does not match regular expression")
+            }
+        },
+    };
+
+    quote! {
+        impl#impl_generics ::try_from::TryFrom<#base> for #name#ty_generics #where_clause {
+            type Err = &'static str;
+
+            fn try_from(inner: #base) -> ::std::result::Result<#name#ty_generics, &'static str> {
+                #fn_body
+            }
+        }
+    }
+}
+
 /// Returns the `generics` with the `lifetime` prepended.
 fn with_lifetime(generics: &syn::Generics, lifetime: &syn::LifetimeDef) -> syn::Generics {
     let mut new_generics = generics.clone();
@@ -309,39 +401,82 @@ fn with_lifetime(generics: &syn::Generics, lifetime: &syn::LifetimeDef) -> syn::
     new_generics
 }
 
+/// Criteria for `TryFrom` validations.
+enum TryFromInnerCheck {
+    /// A function returning `true` if the value is valid.
+    BoolFn(syn::ExprPath),
+    /// A regular expression that must have a match in the value.
+    Regex(syn::LitStr),
+}
+
+/// Returns the unique `TryFromInnerCheck`. Panics if there are no or multiple `try_from_inner` and
+/// `try_from_inner_regex` attributes.
+fn get_attr_try_from_inner(ast: &syn::DeriveInput) -> TryFromInnerCheck {
+    let bool_fn = map_unique_attr(ast, "try_from_inner", |meta| {
+        let nv = match meta {
+            syn::Meta::NameValue(nv) => nv,
+            _ => panic!("try_from_inner attribute requires a name-value pair"),
+        };
+        let fn_str = match nv.lit {
+            syn::Lit::Str(lit_str) => lit_str.value(),
+            _ => panic!("try_from_inner attribute needs a function name as a string value"),
+        };
+        let fn_path = syn::parse_str(&fn_str).expect("try_from_inner argument must be a function");
+        TryFromInnerCheck::BoolFn(fn_path)
+    });
+    let regex = map_unique_attr(ast, "try_from_inner_regex", |meta| {
+        let nv = match meta {
+            syn::Meta::NameValue(nv) => nv,
+            _ => panic!("try_from_inner_regex attribute requires a name-value pair"),
+        };
+        match nv.lit {
+            syn::Lit::Str(lit_str) => TryFromInnerCheck::Regex(lit_str),
+            _ => panic!("try_from_inner_regex attribute needs a regex as a string value"),
+        }
+    });
+    match (bool_fn, regex) {
+        (None, None) => panic!("try_from_inner or try_from_inner_regex attribute missing"),
+        (Some(_), Some(_)) => panic!("only one of try_from_inner and try_from_inner_regex allowed"),
+        (Some(bool_fn), None) => bool_fn,
+        (None, Some(regex)) => regex,
+    }
+}
+
 /// Returns the type that should be used for serialization or deserialization, if specified
 /// explicitly in the attributes.
 fn get_attr_type(ast: &syn::DeriveInput, name: &str) -> Option<syn::Type> {
-    let attr_base_idents: Vec<_> = ast.attrs
+    map_unique_attr(ast, name, |meta| match meta {
+        syn::Meta::Word(_) | syn::Meta::NameValue(_) => {
+            panic!("Base type attribute must be a single identifier in brackets.");
+        }
+        syn::Meta::List(list) => {
+            if list.nested.len() != 1 {
+                panic!("Base type attribute must be a single identifier in brackets.");
+            }
+            match list.nested.first().unwrap().into_value().clone() {
+                syn::NestedMeta::Meta(syn::Meta::Word(word)) => syn::TypeVerbatim {
+                    tts: parse_quote! { #word },
+                }.into(),
+                _ => panic!("Base type attribute must be a single identifier in brackets."),
+            }
+        }
+    })
+}
+
+/// Returns the image of the unique attribute with the `name` under `f`, if any. Panics if there
+/// are multiple attributes with that name.
+fn map_unique_attr<T, F>(ast: &syn::DeriveInput, name: &str, f: F) -> Option<T>
+where
+    F: Fn(syn::Meta) -> T,
+{
+    let mut t_iter = ast.attrs
         .iter()
         .filter_map(syn::Attribute::interpret_meta)
         .filter(|meta| meta.name() == name)
-        .map(|meta| match meta {
-            syn::Meta::Word(_) | syn::Meta::NameValue(_) => {
-                panic!("Base type attribute must be a single identifier in brackets.");
-            }
-            syn::Meta::List(list) => {
-                if list.nested.len() != 1 {
-                    panic!("Base type attribute must be a single identifier in brackets.");
-                }
-                match list.nested.first().unwrap().into_value().clone() {
-                    syn::NestedMeta::Meta(syn::Meta::Word(word)) => word,
-                    _ => panic!("Base type attribute must be a single identifier in brackets."),
-                }
-            }
-        })
-        .collect();
-    match attr_base_idents.len() {
-        0 => None,
-        1 => {
-            let base = attr_base_idents[0];
-            return Some(
-                syn::TypeVerbatim {
-                    tts: parse_quote! { #base },
-                }.into(),
-            );
-        }
-        _ => panic!("Multiple base types specified."),
+        .map(f);
+    match (t_iter.next(), t_iter.next()) {
+        (_, Some(_)) => panic!("Multiple {} attributes specified.", name),
+        (result, None) => result,
     }
 }
 

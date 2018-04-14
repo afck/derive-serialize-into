@@ -24,11 +24,18 @@ well as `Into` and `From` implementations to convert between `String` and `Conta
 Another example is a _validated_ wrapper type like
 
 ```rust
-#[derive(DeserializeTryFrom)]
+#[derive(DeserializeTryFrom, TryFromInner)]
+#[try_from_inner = "validator::validate_email"]
 struct Email(String);
 ```
 
-that should never be instantianted with a string that doesn't represent a valid email address.
-If you implement `Email: TryFrom<String>` using the [try_from](https://crates.io/crates/try_from)
-crate, such that conversion fails for invalid addresses, the derived `Deserialize` will also fail if
-the string is in the wrong format.
+or 
+
+```rust
+#[derive(DeserializeTryFrom, TryFromInner)]
+#[try_from_inner_regex = "^\\+?[[:digit:]]+$"]
+struct Phone(String);
+```
+
+that should never be instantianted with a string that doesn't represent a valid email address or
+phone number. The above examples create `Deserialize` and `TryFrom` implementations accordingly.

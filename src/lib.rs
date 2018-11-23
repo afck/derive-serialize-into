@@ -228,17 +228,17 @@ use proc_macro::TokenStream;
 #[proc_macro_derive(DeserializeTryFrom, attributes(deserialize_from))]
 pub fn derive_deserialize_try_from(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
-    deserialize_from_impl(ast, true).into()
+    deserialize_from_impl(&ast, true).into()
 }
 
 #[doc(hidden)]
 #[proc_macro_derive(DeserializeFrom, attributes(deserialize_from))]
 pub fn derive_deserialize_from(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
-    deserialize_from_impl(ast, false).into()
+    deserialize_from_impl(&ast, false).into()
 }
 
-fn deserialize_from_impl(ast: syn::DeriveInput, try: bool) -> quote::Tokens {
+fn deserialize_from_impl(ast: &syn::DeriveInput, try: bool) -> quote::Tokens {
     let name = ast.ident;
     let base = get_attr_type(&ast, "deserialize_from").unwrap_or_else(|| get_field(&ast).1);
     let (_, ty_generics, where_clause) = ast.generics.split_for_impl();
@@ -269,10 +269,10 @@ fn deserialize_from_impl(ast: syn::DeriveInput, try: bool) -> quote::Tokens {
 #[proc_macro_derive(SerializeInto, attributes(serialize_into))]
 pub fn derive_serialize_into(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
-    serialize_into_impl(ast).into()
+    serialize_into_impl(&ast).into()
 }
 
-fn serialize_into_impl(ast: syn::DeriveInput) -> quote::Tokens {
+fn serialize_into_impl(ast: &syn::DeriveInput) -> quote::Tokens {
     let name = ast.ident;
     let base: syn::Type = get_attr_type(&ast, "serialize_into").unwrap_or_else(|| {
         let raw_base = get_field(&ast).1;
@@ -294,10 +294,10 @@ fn serialize_into_impl(ast: syn::DeriveInput) -> quote::Tokens {
 #[proc_macro_derive(IntoInner)]
 pub fn derive_into_inner(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
-    into_inner_impl(ast).into()
+    into_inner_impl(&ast).into()
 }
 
-fn into_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
+fn into_inner_impl(ast: &syn::DeriveInput) -> quote::Tokens {
     let name = ast.ident;
     let (field, base) = get_field(&ast);
     let (_, ty_generics, where_clause) = ast.generics.split_for_impl();
@@ -323,10 +323,10 @@ fn into_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
 #[proc_macro_derive(FromInner)]
 pub fn derive_from_inner(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
-    from_inner_impl(ast).into()
+    from_inner_impl(&ast).into()
 }
 
-fn from_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
+fn from_inner_impl(ast: &syn::DeriveInput) -> quote::Tokens {
     let name = ast.ident;
     let (field, base) = get_field(&ast);
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
@@ -346,13 +346,16 @@ fn from_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
 }
 
 #[doc(hidden)]
-#[proc_macro_derive(TryFromInner, attributes(try_from_inner, try_from_inner_regex))]
+#[proc_macro_derive(
+    TryFromInner,
+    attributes(try_from_inner, try_from_inner_regex)
+)]
 pub fn derive_try_from_inner(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
-    try_from_inner_impl(ast).into()
+    try_from_inner_impl(&ast).into()
 }
 
-fn try_from_inner_impl(ast: syn::DeriveInput) -> quote::Tokens {
+fn try_from_inner_impl(ast: &syn::DeriveInput) -> quote::Tokens {
     let name = ast.ident;
     let check = get_attr_try_from_inner(&ast);
     let (field, base) = get_field(&ast);
@@ -469,7 +472,8 @@ fn map_unique_attr<T, F>(ast: &syn::DeriveInput, name: &str, f: F) -> Option<T>
 where
     F: Fn(syn::Meta) -> T,
 {
-    let mut t_iter = ast.attrs
+    let mut t_iter = ast
+        .attrs
         .iter()
         .filter_map(syn::Attribute::interpret_meta)
         .filter(|meta| meta.name() == name)
@@ -482,11 +486,11 @@ where
 
 /// Returns the name and type of the field, if there is a unique one.
 fn get_field(ast: &syn::DeriveInput) -> (Option<syn::Ident>, syn::Type) {
-    match ast.data {
-        syn::Data::Struct(ref data_struct) => {
+    match &ast.data {
+        syn::Data::Struct(data_struct) => {
             let mut fields = data_struct.fields.iter();
             match (fields.next(), fields.next()) {
-                (Some(field), None) => (field.ident.clone(), field.ty.clone()),
+                (Some(field), None) => (field.ident, field.ty.clone()),
                 _ => panic!("Can only derive base type for structs with a single field."),
             }
         }
